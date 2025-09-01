@@ -8,6 +8,8 @@ struct CameraView: View {
     @State private var showingCamera = false
     @State private var capturedImage: UIImage?
     @State private var showingPermissionAlert = false
+    @StateObject private var faceDetectionManager = FaceDetectionManager()
+    @State private var showingFaceDetection = false
     @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
@@ -23,14 +25,55 @@ struct CameraView: View {
                 
                 // Camera Preview Area
                 if let capturedImage = capturedImage {
-                    // Show captured image
+                    // Show captured image with face detection
                     VStack(spacing: Spacing.lg) {
-                        Image(uiImage: capturedImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxHeight: 400)
-                            .cornerRadius(CornerRadius.lg)
-                            .shadow(color: .gray.opacity(0.3), radius: 8, x: 0, y: 4)
+                        ZStack {
+                            Image(uiImage: capturedImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxHeight: 400)
+                                .cornerRadius(CornerRadius.lg)
+                                .shadow(color: .gray.opacity(0.3), radius: 8, x: 0, y: 4)
+                            
+                            // Face detection overlay
+                            if showingFaceDetection {
+                                FaceDetectionOverlay(
+                                    detectedFaces: faceDetectionManager.detectedFaces,
+                                    imageSize: capturedImage.size,
+                                    displaySize: CGSize(width: min(capturedImage.size.width, 400), 
+                                                      height: min(capturedImage.size.height, 400))
+                                )
+                            }
+                            
+                            // Processing indicator
+                            if faceDetectionManager.isProcessing {
+                                ProgressView("Detecting faces...")
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .scaleEffect(1.2)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.black.opacity(0.7))
+                                            .frame(width: 150, height: 50)
+                                    )
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        
+                        // Face detection toggle
+                        HStack(spacing: Spacing.md) {
+                            CustomizedButton(
+                                title: showingFaceDetection ? "Hide Detection" : "Detect Faces",
+                                style: .outline,
+                                action: {
+                                    if showingFaceDetection {
+                                        showingFaceDetection = false
+                                        faceDetectionManager.disableDetection()
+                                    } else {
+                                        performFaceDetection()
+                                    }
+                                }
+                            )
+                        }
                         
                         HStack(spacing: Spacing.md) {
                             CustomizedButton(
@@ -38,6 +81,8 @@ struct CameraView: View {
                                 style: .secondary,
                                 action: {
                                     self.capturedImage = nil
+                                    self.showingFaceDetection = false
+                                    faceDetectionManager.disableDetection()
                                     openCamera()
                                 }
                             )
@@ -47,7 +92,7 @@ struct CameraView: View {
                                 style: .primary,
                                 action: {
                                     // Handle using the photo
-                                    print("Using captured photo")
+                                    print("Using captured photo with \(faceDetectionManager.detectedFaces.count) detected faces")
                                 }
                             )
                         }
@@ -168,6 +213,19 @@ struct CameraView: View {
     private func openAppSettings() {
         if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(settingsUrl)
+        }
+    }
+    
+    // MARK: - Face Detection
+    private func performFaceDetection() {
+        guard let image = capturedImage else { return }
+        
+        faceDetectionManager.enableDetection()
+        faceDetectionManager.detectFaces(in: image) { detectedFaces in
+            DispatchQueue.main.async {
+                self.showingFaceDetection = true
+                print("Face detection completed. Found \(detectedFaces.count) face(s)")
+            }
         }
     }
 }
